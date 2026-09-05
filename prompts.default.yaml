@@ -143,6 +143,7 @@ stages:
 
       {revised}'
   knowledge_extract:
+    max_tokens: 16384
     json_mode: true
     system: You extract high-signal evidence cards from papers.
     user: 'Extract structured knowledge cards from shortlist.

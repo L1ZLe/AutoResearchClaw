@@ -939,23 +939,37 @@ def _execute_knowledge_extract(
         if isinstance(payload, dict) and isinstance(payload.get("cards"), list):
             cards = [item for item in payload["cards"] if isinstance(item, dict)]
     if not cards:
-        rows = _parse_jsonl_rows(shortlist)
-        for idx, paper in enumerate(rows[:6]):
-            title = str(paper.get("title", f"Paper {idx + 1}"))
-            cards.append(
+        # Hard-fail on LLM extraction failure: never silently emit template
+        # placeholder cards. This is a load-bearing guard — an LLM call that
+        # returns empty/invalid JSON (e.g. a reasoning-model token overflow on
+        # a long shortlist without an adequate max_tokens) must surface and
+        # pause, NOT cascade placeholder cards into synthesis (stages 7-8)
+        # and later paper writing.
+        (stage_dir / "knowledge_meta.json").write_text(
+            json.dumps(
                 {
-                    "card_id": f"card-{idx + 1}",
-                    "title": title,
-                    "problem": f"How to improve {config.research.topic}",
-                    "method": "Template method summary",
-                    "data": "Template dataset",
-                    "metrics": "Template metric",
-                    "findings": "Template key finding",
-                    "limitations": "Template limitation",
-                    "citation": str(paper.get("url", "")),
-                    "cite_key": str(paper.get("cite_key", "")),
-                }
-            )
+                    "outcome": "llm_extraction_failed",
+                    "shortlist_rows": len(_parse_jsonl_rows(shortlist)),
+                    "note": (
+                        "Stage 6 LLM returned no usable cards (empty/invalid "
+                        "JSON or empty cards list). Resolution: raise the "
+                        "knowledge_extract max_tokens, re-run, or manually "
+                        "author a cards/ set from shortlist.jsonl. Do NOT "
+                        "proceed with placeholder cards."
+                    ),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return StageResult(
+            stage=Stage.KNOWLEDGE_EXTRACT,
+            status=StageStatus.PAUSED,
+            artifacts=("knowledge_meta.json",),
+            error="LLM knowledge extraction returned no cards (see knowledge_meta.json).",
+            evidence_refs=("stage-06/knowledge_meta.json",),
+            decision="llm_extraction_failed",
+        )
     for idx, card in enumerate(cards):
         card_id = _safe_filename(str(card.get("card_id", f"card-{idx + 1}")))
         parts = [f"# {card.get('title', card_id)}", ""]

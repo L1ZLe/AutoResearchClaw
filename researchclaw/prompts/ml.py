@@ -312,6 +312,7 @@ _DEFAULT_STAGES: dict[str, dict[str, Any]] = {
             "exactly in the output.\n"
             "Shortlist:\n{shortlist}"
         ),
+        "max_tokens": 16384,
         "json_mode": True,
     },
     # ── Phase C: Knowledge Synthesis ─────────────────────────────────────
