@@ -119,6 +119,8 @@ stages:
 
       Output markdown and for each hypothesis provide rationale, measurable prediction, failure condition.
 
+      SCOPE CONSTRAINT (MANDATORY - report-only pipeline): This is a REPORT-ONLY pipeline over already-collected, locked results. Do NOT propose or design ANY new experiment, dataset, model variant, split, statistical procedure, or baseline. Every hypothesis must restate a result ALREADY in the locked results store, with evidence cited from results.json (metrics, ablations, seasonal/cross-year OOD, conformal). Express measurable prediction / failure condition using EXISTING reported values - do not invent thresholds, AUC targets, node sets, or tests that were not run. New-testable ideas are future-work/Limitations only, marked as not executed.
+
       Synthesis:
 
       {synthesis}'
