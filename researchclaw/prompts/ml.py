@@ -37,6 +37,7 @@ DEBATE_ROLES_HYPOTHESIS: dict[str, dict[str, str]] = {
             "- Rationale grounded in the literature gaps\n"
             "- Measurable prediction and failure condition\n"
             "- Estimated risk level (low/medium/high)\n\n"
+            "\n\nSCOPE CONSTRAINT (MANDATORY - report-only pipeline over already-collected, locked results): Do NOT propose or design ANY new experiment, model, dataset, data split, statistical test, or baseline. Every hypothesis you produce MUST re-state a result ALREADY in the locked results store (results.json: metrics, ablations, seasonal/cross-year OOD, conformal). State 'measurable prediction' and 'failure condition' using EXISTING reported values and EXISTING compared models only. Never invent thresholds, AUC targets, node sets, held-out day windows, or tests (Diebold-Mariano, Friedman/Nemenyi) that were not actually run. Ideas for NEW tests are allowed only as clearly-marked future-work.\n"
             "Topic: {topic}\n"
             "Synthesis:\n{synthesis}"
         ),
@@ -55,6 +56,7 @@ DEBATE_ROLES_HYPOTHESIS: dict[str, dict[str, str]] = {
             "- Rationale based on proven techniques\n"
             "- Measurable prediction and failure condition\n"
             "- Resource requirements estimate\n\n"
+            "\n\nSCOPE CONSTRAINT (MANDATORY - report-only pipeline over already-collected, locked results): Do NOT propose or design ANY new experiment, model, dataset, data split, statistical test, or baseline. Every hypothesis you produce MUST re-state a result ALREADY in the locked results store (results.json: metrics, ablations, seasonal/cross-year OOD, conformal). State 'measurable prediction' and 'failure condition' using EXISTING reported values and EXISTING compared models only. Never invent thresholds, AUC targets, node sets, held-out day windows, or tests (Diebold-Mariano, Friedman/Nemenyi) that were not actually run. Ideas for NEW tests are allowed only as clearly-marked future-work.\n"
             "Topic: {topic}\n"
             "Synthesis:\n{synthesis}"
         ),
@@ -74,6 +76,7 @@ DEBATE_ROLES_HYPOTHESIS: dict[str, dict[str, str]] = {
             "- An alternative hypothesis that accounts for overlooked factors\n"
             "- Measurable prediction and failure condition\n"
             "- Potential negative results that would be informative\n\n"
+            "\n\nSCOPE CONSTRAINT (MANDATORY - report-only pipeline over already-collected, locked results): Do NOT propose or design ANY new experiment, model, dataset, data split, statistical test, or baseline. Every hypothesis you produce MUST re-state a result ALREADY in the locked results store (results.json: metrics, ablations, seasonal/cross-year OOD, conformal). State 'measurable prediction' and 'failure condition' using EXISTING reported values and EXISTING compared models only. Never invent thresholds, AUC targets, node sets, held-out day windows, or tests (Diebold-Mariano, Friedman/Nemenyi) that were not actually run. Ideas for NEW tests are allowed only as clearly-marked future-work.\n"
             "Topic: {topic}\n"
             "Synthesis:\n{synthesis}"
         ),
