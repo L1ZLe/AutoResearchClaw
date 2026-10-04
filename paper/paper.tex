@@ -47,13 +47,13 @@ Locational marginal price theory explains why the spread is a natural target for
 Probabilistic forecasting research has developed interval-specific evaluation, proper scoring rules, and calibration diagnostics \citep{gneiting2007strictly, bracher2021evaluating}. Quantile regression remains a central tool in energy applications \citep{taieb2016forecasting}, and conformal methods can provide finite-sample coverage under exchangeability \citep{vovk2005algorithmic, lei2018distribution}. A recurring challenge is quantile crossing, addressed by non-crossing constraints, isotonic post-processing, or hierarchical quantile models \citep{chen2025outlieradaptivebased, taieb2020hierarchical}. SPARC combines a soft quantile head with a training-time coherence penalty, and reports a hierarchical variant that enforces ordering by construction. The larger issue is metric selection. Different proper scoring rules reward different properties, and the interval score is explicitly connected to the cost borne by a decision maker whose position depends on the band \citep{bracher2021evaluating, hobbs2022probabilistic}. This line of work supports the paper's central framing: calibration at the hedging interval, not average quantile error, is the property that matters for price-spread risk sizing.
 
 \section{Background and the Old View}
-A day-ahead locational marginal price at settlement point $i$ decomposes into a system energy term and a congestion term,
+A day-ahead locational marginal price at settlement point $i$ decomposes into a system energy term and a congestion term \citep{schweppe1988spot},
 \begin{equation}
 \mathrm{LMP}_{i,t} = \lambda_t + \sum_{k} \mathrm{SF}_{k,i,t}\,\mu_{k,t},
 \end{equation}
 where $\lambda_t$ is the system energy price, $\mathrm{SF}_{k,i,t}$ is the shift factor of point $i$ on constraint $k$, and $\mu_{k,t}$ is the shadow price. The spread between two points cancels the common energy term, leaving a congestion differential. This is why the published binding constraints and their shadow prices are the natural inputs.
 
-The market clears once per day, for all 24 delivery hours, in a single security-constrained unit commitment and economic dispatch run. At bid time for delivery hour $t$ of day $D$, the most recent completed clearing is the previous day's, and the freshest snapshot for hour $t$ is the same hour one day earlier. The model therefore uses a 24\,h lead. A shorter lead would sit inside the same auction as the target and would not be available when the bid is placed.
+The market clears once per day, for all 24 delivery hours, in a single security-constrained unit commitment and economic dispatch run \citep{ercot2024nodal}. At bid time for delivery hour $t$ of day $D$, the most recent completed clearing is the previous day's, and the freshest snapshot for hour $t$ is the same hour one day earlier. The model therefore uses a 24\,h lead. A shorter lead would sit inside the same auction as the target and would not be available when the bid is placed.
 
 The standard view treats the spread as a generic time series. Quantile regression on the spread's own history and generic covariates already outputs quantiles, so the gap is not point versus quantile. The gap is inputs. Such models never read the published constraints, so they cannot condition on the mechanism that moves the spread, and they go miscalibrated when congestion binds.
 
@@ -172,7 +172,7 @@ with $\alpha = 0.10$. Under exchangeability, this band has marginal coverage at 
 The design rationale follows from the structure of the input. The binding-constraint set is variable-length and unordered, so the aggregator must be permutation invariant. Attention provides that invariance and yields per-slot weights that can be read as exposure weights. Uniform attention degrades calibration substantially, which indicates that the learned weighting is the load-bearing component. The model is deliberately small: the total parameter count is $8{,}978$, dominated by the head rather than the slot machinery. The per-example cost is $O(K d)$ with $K=50$ and $d=8$, which is trivial on commodity CPU. This is important for a day-ahead desk that retrains on a recent rolling window as market conditions shift; the model is cheap to refresh without specialized hardware.
 
 \section{Experiments}
-We evaluate SPARC on ERCOT day-ahead LMP spreads. The primary corridor is HB\_HUBAVG to HB\_PAN, defined as source minus sink, with the full baseline suite. Two additional pairs, HB\_HUBAVG to HB\_NORTH and HB\_HUBAVG to HB\_WEST, are used for proposed-model-only transfer checks. The main study window is January 1, 2026 through September 14, 2026, containing 6{,}088 valid hourly samples. We split the data chronologically into a training set of 4{,}261 hours, a validation set of 913 hours, and a held-out test set of 914 hours. All models are evaluated under the same availability rule: at bid time for hour $t$, the constraint snapshot is the clearing for hour $t-24$, the same hour one day earlier. This is the freshest published output before the day-ahead bid closes.
+We evaluate SPARC on ERCOT day-ahead LMP spreads. The primary corridor is HB\_HUBAVG to HB\_PAN, defined as source minus sink, with the full baseline suite. Two additional pairs, HB\_HUBAVG to HB\_NORTH and HB\_HUBAVG to HB\_WEST, are used for proposed-model-only transfer checks. The main study window is January 1, 2026 through September 14, 2026, containing 6{,}088 valid hourly samples. We split the data chronologically into a training set of 4{,}261 hours, a validation set of 913 hours, and a held-out test set of 914 hours. All models are evaluated under the same availability rule: at bid time for hour $t$, the constraint snapshot is the clearing for hour $t-24$, the same hour one day earlier. This is the freshest published output before the day-ahead bid closes. The settlement and constraint files are public ERCOT data, tied to FERC Order 881 \citep{ferc2021order881}.
 
 The constraint inputs are the top 50 binding constraints by shadow-price magnitude from the previous day's clearing. Each constraint contributes four features: the shadow price, a constraint identifier index, the voltage level of the constrained element as a scalar, and the flow ratio clipped to $[0,5]$. The temporal vector contains six Fourier terms for hour of day and day of week, and lagged spreads at 24, 48, and 168 hours. The target is the realized day-ahead spread, and no real-time or intraday prices are used. All models receive the same input availability, so the comparison is apples-to-apples with respect to the bid-time information set.
 
@@ -405,11 +405,70 @@ Min-width routing & -- & 73.13 \\
 \end{tabular}}
 \end{table}
 
-Two directions are invalid. The feature-adaptive conformal band under-covers at 85.3\%, and min-width routing collapses to the linear model's coverage at 73.13\%. The remaining directions are within seed noise of SPARC. The nearest, the identity-only variant at 18.06, sits between the soft head at 18.20 and the hierarchical head at 18.00.
+The ten directions, with the assumption each tested and its verdict. None significantly beats SPARC on calibrated Winkler, whose value is 18.20 for the soft head and 18.00 for the hierarchical head.
+
+\begin{itemize}\setlength\itemsep{2pt}
+\item \textbf{Identity only} (18.06, coverage 90.77). Assumption: shadow-price magnitude is needed, not just which constraints bind. Intuition: if identity carries the signal, dropping magnitude should not hurt. Verdict: no gain, and the closest to SPARC.
+\item \textbf{Crossing-penalty sweep, 0.05 against 0.10} (18.08, $p=0.41$). Assumption: the default $\lambda=0.1$ is optimal. Intuition: a smaller penalty trades coherence pressure for average quantile loss. Verdict: no gain.
+\item \textbf{Level and spread factorization} (18.16, $p=0.88$). Assumption: the level and spread channels have different structure. Intuition: factorizing them should tighten the band. Verdict: no gain, a single-seed win that did not replicate.
+\item \textbf{Full fusion} (18.26, coverage 92.08). Assumption: combining the winning blocks beats any single block. Intuition: a linear base, a constraint-attention residual, the market-rule feature, the hierarchical head, and conformal harvest each block. Verdict: no gain.
+\item \textbf{Nested normalized conformal} (nested width 13.37 against flat 13.90, nested Winkler 18.30 against 18.20). Assumption: normalizing the residual by a width prior makes it exchangeable. Intuition: scale the residual, then conformalize. Verdict: ruled out, the gain is not there and the PIT worsens.
+\item \textbf{Winkler-objective training} (18.34, coverage 87.9). Assumption: training on pinball while reporting Winkler costs calibrated width. Intuition: train on the reported metric. Verdict: no gain, and it hurt average quantile loss.
+\item \textbf{Time-in-query attention} (18.38, coverage 92.60). Assumption: the pair-only query was sufficient. Intuition: if the constraint-temporal interaction is real, time in the query should help. Verdict: no gain.
+\item \textbf{Feature-adaptive conformal} (17.38, coverage 85.3). Assumption: flat conformal width is too uniform. Intuition: regress the conformity score on features. Verdict: invalid, the band under-covers at 85.3, which is 4.7 points below the target.
+\item \textbf{Linear spine with the rule as a feature plus conformal} (20.14, coverage 90.50). Assumption: a learned network is needed for the point forecast. Intuition: if a linear backbone with the rule and conformal already covers, the constraint residual buys nothing. Verdict: no gain.
+\item \textbf{Pointwise min-width routing} (coverage 73.13, width 6.41). Assumption: choosing the narrower band each hour composes coverage. Intuition: pick the tighter band per hour. Verdict: ruled out, selection collapses to the linear model's coverage.
+\end{itemize}
+
+The design assumptions behind the study. The linear backbone owns average quantile loss; confirmed, the linear-spine variant posts the best average quantile loss of the group, but that is not the deciding metric. Constraint identity dominates shadow-price magnitude; not supported as stated, because the constant-readout variant fixes the readout to one and so does not isolate magnitude. The metric decides the winner; this is the one premise that held.
+
+\section{Training and Calibration Algorithms}
+
+\begin{figure}[t]
+\centering
+\begin{minipage}{\linewidth}
+\hrule\vspace{2pt}
+\textbf{Algorithm 2:} SPARC training\\
+\small
+\textbf{Input:} chronological train split, epochs $E$, adjacent quantile pairs $\mathcal{A}$, weight $\lambda = 0.1$\\
+\begin{enumerate}\setlength\itemsep{0pt}
+\item \textbf{for} $e = 1,\dots,E$ \textbf{do}\hfill
+\item \quad \textbf{for} each batch \textbf{do}\hfill
+\item \quad\quad 1: $\hat q \gets \mathrm{Algorithm~1}$
+\item \quad\quad 2: $L_{\mathrm{pin}} \gets \frac{1}{N}\sum_i \sum_{\tau} \rho_\tau(y_i - \hat q_{i,\tau})$ \hfill pinball over 7 levels
+\item \quad\quad 3: $L_{\mathrm{coh}} \gets \lambda \frac{1}{|\mathcal{A}|}\sum_i \sum_{j \in \mathcal{A}} \max(0, \hat q_{i,j+1} - \hat q_{i,j})$
+\item \quad\quad 4: $L \gets L_{\mathrm{pin}} + L_{\mathrm{coh}}$
+\item \quad\quad 5: update $\theta$ (Adam)
+\end{enumerate}
+\textbf{Output:} trained $\theta$. Convention: $j$ indexes quantile levels in ascending order, so $j+1$ is the next-higher quantile, and the penalty fires when the higher estimate is the smaller one.
+\vspace{2pt}\hrule
+\end{minipage}
+\caption{Training with the pinball loss and the coherence penalty.}
+\label{alg:training}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\begin{minipage}{\linewidth}
+\hrule\vspace{2pt}
+\textbf{Algorithm 3:} split-conformal calibration\\
+\small
+\textbf{Input:} trained $\theta$, calibration half $\{(x_i, y_i)\}$, $\alpha = 0.10$\\
+\begin{enumerate}\setlength\itemsep{0pt}
+\item 1: \textbf{for each} $i$: $(l_i, u_i) \gets [\hat q_{i,0.10}, \hat q_{i,0.90}]$ from Algorithm~1
+\item 2: $E_i \gets \max(l_i - y_i,\, y_i - u_i)$ \hfill nonconformity
+\item 3: $q_c \gets \mathrm{Quantile}(\{E_i\}, 1 - \alpha)$
+\end{enumerate}
+\textbf{Output:} band $[l - q_c,\, u + q_c]$, with marginal coverage at least $1-\alpha$ under exchangeability. The data are a time series, so exchangeability is approximate, and we validate the achieved coverage empirically.
+\vspace{2pt}\hrule
+\end{minipage}
+\caption{Split-conformal calibration of the central band.}
+\label{alg:calibration}
+\end{figure}
 
 \section{Proofs}
 
-\paragraph{Proposition 1 (split conformal coverage).} Let $\{E_i\}_{i=1}^{n}$ be the nonconformity scores on the calibration set, and let $\hat Q$ be their $\lceil (n+1)(1-\alpha)\rceil / n$ empirical quantile. For a new point exchangeable with the calibration set, its score is equally likely to take any rank among the $n+1$ scores, so the probability that its score is at most $\hat Q$ is at least $1-\alpha$. The calibrated band therefore has marginal coverage at least $1-\alpha$. This is the standard split-conformal argument \citep{vovk2005algorithmic, lei2018distribution}.
+\paragraph{Proposition 1 (split conformal coverage).} Let $E_1,\dots,E_n$ be the nonconformity scores on the calibration set, and let $E_{n+1}$ be the score of a test point. Under exchangeability, the rank of $E_{n+1}$ among the $n+1$ scores is uniform on $\{1,\dots,n+1\}$. Let $k = \lceil (n+1)(1-\alpha)\rceil$ and let $\hat Q = E_{(k)}$ be the $k$-th smallest calibration score. The calibrated band covers the test point exactly when $E_{n+1} \le \hat Q$, which holds whenever the rank of $E_{n+1}$ is at most $k$. The coverage probability is therefore $k/(n+1) \ge 1-\alpha$. This is the standard split-conformal argument \citep{vovk2005algorithmic, lei2018distribution}.
 
 \paragraph{Lemma 1 (non-crossing hierarchical head).} The hierarchical head computes a median $m$ and increments $d_k = \mathrm{softplus}(\cdot) \ge 0$. It writes the lower quantiles as $m - \sum_{j \le k} d_j$ and the upper quantiles as $m + \sum_{j \le k} d_j$. Each cumulative sum is non-decreasing in $k$ and every $d_k$ is nonnegative, so the seven outputs are ordered almost surely. The average quantile crossing rate is therefore zero by construction, without a coherence penalty.
 

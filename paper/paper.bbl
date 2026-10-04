@@ -1,0 +1,149 @@
+\begin{thebibliography}{}
+
+\bibitem[Bessa et~al., 2017]{bessa2017improved}
+Bessa, R.~J., Möhrlen, C., Fundel, V., Siefert, M., Browell, J., Gaidi, S.
+  H.~E., Hodge, B., Ümit Cali, and Kariniotakis, G. (2017).
+\newblock Towards improved understanding of the applicability of uncertainty
+  forecasts in the electric power industry.
+\newblock {\em Energies}.
+
+\bibitem[Bracher et~al., 2021]{bracher2021evaluating}
+Bracher, J., Ray, E.~L., Gneiting, T., and Reich, N.~G. (2021).
+\newblock Evaluating epidemic forecasts in an interval format.
+\newblock {\em PLOS Computational Biology}, 17(2):e1008618.
+
+\bibitem[Chen et~al., 2025]{chen2025outlieradaptivebased}
+Chen, Z., Zhang, B., Du, C., Yang, C., and Gui, W. (2025).
+\newblock Outlier-adaptive-based non-crossing quantiles method for day-ahead
+  electricity price forecasting.
+\newblock {\em Applied Energy}.
+
+\bibitem[Das et~al., 2021]{das2021forecasting}
+Das, R., Bo, R., Chen, H., Rehman, W.~U., and Wunsch, D. (2021).
+\newblock Forecasting nodal price difference between day-ahead and real-time
+  electricity markets using long-short term memory and sequence-to-sequence
+  networks.
+\newblock {\em IEEE Access}.
+
+\bibitem[{Electric Reliability Council of Texas}, 2024]{ercot2024nodal}
+{Electric Reliability Council of Texas} (2024).
+\newblock Ercot nodal protocols.
+\newblock Market Information System, Day-Ahead Market.
+
+\bibitem[{Federal Energy Regulatory Commission}, 2021]{ferc2021order881}
+{Federal Energy Regulatory Commission} (2021).
+\newblock Managing transmission line ratings.
+\newblock Order No. 881, 179 FERC 61,150.
+
+\bibitem[Gneiting and Raftery, 2007]{gneiting2007strictly}
+Gneiting, T. and Raftery, A. (2007).
+\newblock Strictly proper scoring rules, prediction, and estimation.
+
+\bibitem[Hobbs et~al., 2022]{hobbs2022probabilistic}
+Hobbs, B.~F., Krishnan, V., Zhang, J., Hamann, H.~F., Siebenschuh, C., Zhang,
+  R., Li, B., He, L., Edwards, P., Sky, H., Krad, I., Spyrou, E., Fang, X.,
+  Wang, Y., Xu, Q., and Zhang, S. (2022).
+\newblock How can probabilistic solar power forecasts be used to lower costs
+  and improve reliability in power spot markets? a review and application to
+  flexiramp requirements.
+\newblock {\em IEEE Open Access Journal of Power and Energy}.
+
+\bibitem[Hong et~al., 2020a]{hong2020energy}
+Hong, T., Pinson, P., Wang, Y., Weron, R., Yang, D., and Zareipour, H. (2020a).
+\newblock Energy forecasting: A review and outlook.
+\newblock {\em IEEE Open Access Journal of Power and Energy}.
+
+\bibitem[Hong et~al., 2020b]{hong2020locational}
+Hong, Y., Taylar, J.~V., and Fajardo, A.~C. (2020b).
+\newblock Locational marginal price forecasting using deep learning network
+  optimized by mapping-based genetic algorithm.
+\newblock {\em IEEE Access}.
+
+\bibitem[Kingma and Ba, 2014]{kingma2014adam}
+Kingma, D.~P. and Ba, J. (2014).
+\newblock Adam: A method for stochastic optimization.
+\newblock {\em UvA-DARE (University of Amsterdam)}.
+
+\bibitem[Lago et~al., 2020]{lago2020forecasting}
+Lago, J., Marcjasz, G., Schutter, B.~D., and Weron, R. (2020).
+\newblock Forecasting day-ahead electricity prices: A review of
+  state-of-the-art algorithms, best practices and an open-access benchmark.
+\newblock {\em Applied Energy}.
+
+\bibitem[Lei et~al., 2018]{lei2018distribution}
+Lei, J., G'Sell, M., Rinaldo, A., Tibshirani, R.~J., and Wasserman, L. (2018).
+\newblock Distribution-free predictive inference for regression.
+\newblock {\em Journal of the American Statistical Association},
+  113(523):1094--1111.
+
+\bibitem[Li et~al., 2022]{li2022probabilistic}
+Li, X., Ma, L., Chen, P., Xu, H., Xing, Q., Yan, J., Lu, S., Fan, H., Yang, L.,
+  and Cheng, Y. (2022).
+\newblock Probabilistic solar irradiance forecasting based on xgboost.
+\newblock {\em Energy Reports}.
+
+\bibitem[Lim et~al., 2021]{lim2020temporal}
+Lim, B., Ar{\"'e}fik, S., Loeff, N., and Pfister, T. (2021).
+\newblock Temporal fusion transformers for interpretable multi-horizon time
+  series forecasting.
+\newblock In {\em Proceedings of the 9th International Conference on Learning
+  Representations}.
+\newblock arXiv:1912.09363.
+
+\bibitem[Marcjasz et~al., 2023]{marcjasz2023distributional}
+Marcjasz, G., Narajewski, M., Weron, R., and Ziel, F. (2023).
+\newblock Distributional neural networks for electricity price forecasting.
+\newblock {\em Energy Economics}.
+
+\bibitem[Matheson and Winkler, 1976]{matheson1976scoring}
+Matheson, J.~E. and Winkler, R.~L. (1976).
+\newblock Scoring rules for continuous probability distributions.
+\newblock {\em Management Science}, 22(7):1087--1095.
+
+\bibitem[Schweppe et~al., 1988]{schweppe1988spot}
+Schweppe, F.~C., Caramanis, M.~C., Tabors, R.~D., and Bohn, R.~E. (1988).
+\newblock {\em Spot Pricing of Electricity}.
+\newblock Kluwer Academic Publishers.
+
+\bibitem[Taieb et~al., 2016]{taieb2016forecasting}
+Taieb, S.~B., Huser, R., Hyndman, R.~J., and Genton, M.~G. (2016).
+\newblock Forecasting uncertainty in electricity smart meter data by boosting
+  additive quantile regression.
+\newblock {\em IEEE Transactions on Smart Grid}.
+
+\bibitem[Taieb et~al., 2020]{taieb2020hierarchical}
+Taieb, S.~B., Taylor, J.~W., and Hyndman, R.~J. (2020).
+\newblock Hierarchical probabilistic forecasting of electricity demand with
+  smart meter data.
+\newblock {\em Journal of the American Statistical Association}.
+
+\bibitem[Toubeau et~al., 2020]{toubeau2020capturing}
+Toubeau, J.-F., Bottieau, J., Wang, Y., and Vall{\'e}e, F. (2020).
+\newblock Capturing spatio-temporal dependencies in the probabilistic
+  forecasting of distribution locational marginal prices.
+\newblock {\em IEEE Transactions on Smart Grid}.
+
+\bibitem[Uniejewski and Weron, 2018]{uniejewski2018efficient}
+Uniejewski, B. and Weron, R. (2018).
+\newblock Efficient forecasting of electricity spot prices with expert and
+  lasso models.
+\newblock {\em Energies}.
+
+\bibitem[Vovk et~al., 2005]{vovk2005algorithmic}
+Vovk, V., Gammerman, A., and Shafer, G. (2005).
+\newblock {\em Algorithmic Learning in a Random World}.
+\newblock Springer.
+
+\bibitem[Wen et~al., 2017]{wen2017multihorizon}
+Wen, R., Torkkola, K., Narayanaswamy, B., and Madeka, D. (2017).
+\newblock A multi-horizon quantile recurrent forecaster.
+\newblock {\em arXiv (Cornell University)}.
+
+\bibitem[Yu et~al., 2026]{yu2026marketruleinformed}
+Yu, R., Lin, J., Bunn, D.~W., Stiasny, J., Wang, W., Chen, Y., Esterl, T.,
+  Palensky, P., and Cremer, J.~L. (2026).
+\newblock A market-rule-informed neural network for efficient imbalance
+  electricity price forecasting.
+\newblock {\em arXiv preprint arXiv:2605.09061}.
+
+\end{thebibliography}
