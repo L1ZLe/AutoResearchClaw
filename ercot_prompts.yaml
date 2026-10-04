@@ -1,0 +1,90 @@
+# AutoResearchClaw prompt overrides for the ERCOT DAM LMP-spread rule-embedding paper.
+# Single most important override: replace the default `pkg_hint_sandbox` block (which says
+# "numpy-only, no torch, no external data") with a real-data, torch-enabled, ERCOT-specific
+# directive. This block is injected into every CodeAgent per-file prompt (generate_single_file)
+# AND the misalignment-regeneration prompt — overriding it removes the root-cause contradiction
+# on every codegen path.
+
+blocks:
+  pkg_hint_sandbox: |
+    ## ENVIRONMENT (this overrides any generic 'numpy-only' guidance — IGNORE that generic hint)
+    AVAILABLE PACKAGES (sandbox mode): Python stdlib, numpy, torch, sklearn, scipy, pandas, pyarrow, xgboost.
+    - torch is installed and ALLOWED (CPU build). Use `device = torch.device('cpu')`.
+    - pandas + pyarrow are installed and REQUIRED — you MUST read the real parquet data files.
+    - Do NOT restrict yourself to numpy/stdlib. Deep-learning forecasters (MLP, LSTM,
+      constraint-attention) are implemented in PyTorch.
+
+    ## DATA — REAL ERCOT 2026 DATA ONLY. NO SYNTHETIC DATA. NO BENCHMARK DATASETS.
+    You MUST load the following 5 real ERCOT 2026 parquet files by absolute path (they exist
+    and are the ONLY permitted data sources):
+
+    1. /home/l1zle/EnergexCapital/ERCOT/data/raw/ercot_raw_data/2026_data/ercot_dam_prices_2026.parquet
+       columns: deliveryDate, hourEnding(string), settlementPoint, settlementPointPrice, DSTFlag
+       (nodal day-ahead settlement-point prices — source of the PTP spread target)
+    2. /home/l1zle/EnergexCapital/ERCOT/data/raw/ercot_raw_data/2026_data/ercot_dam_constraints_2026.parquet
+       columns: deliveryDate, hourEnding(string), constraintId, constraintName, constraintLimit,
+       constraintValue, violationAmount, shadowPrice, fromStation, toStation, fromStationkV,
+       toStationkV, deliveryTime, DSTFlag
+       (real DAM constraint shadow prices — the market-rule-informed attention keys)
+    3. /home/l1zle/EnergexCapital/ERCOT/data/raw/ercot_raw_data/2026_data/ercot_actual_load_2026.parquet
+       columns: deliveryDate(string), hourEnding(int), currentDayFcast, dayAheadFcast, actualLoad, ...
+    4. /home/l1zle/EnergexCapital/ERCOT/data/raw/ercot_raw_data/2026_data/ercot_ptp_bids_2026.parquet
+       columns: deliveryDate(string), hourEnding(int), qseName, settlementPointSource,
+       settlementPointSink, PTPBidMW, PTPBidPrice, bidId, multiHourBlock
+       (used only to SELECT the highest-traded source-sink settlement point pair)
+    5. /home/l1zle/EnergexCapital/ERCOT/data/raw/ercot_raw_data/2026_data/ercot_ptp_awards_2026.parquet
+       columns: deliveryDate, hourEnding, qseName, settlementPointSource, settlementPointSink,
+       PTPBidAwardMW, ...
+
+    MANDATORY DATA RULES:
+    - COPY-PROTECT-VERIFY: copy the 5 files into a read-only working directory, compute a SHA256
+      checksum of each source file BEFORE copying, then verify the copy's checksum MATCHES. Any
+      mismatch -> raise RuntimeError. NEVER modify, overwrite, or write-in-place the originals.
+    - At run end print the verification line: `ORIGINALS_INTACT: md5 match` (or FAIL if any differ).
+    - FORBIDDEN: np.random.randn / torch.randn / any synthetic data as a substitute for real data.
+    - FORBIDDEN benchmark datasets by name: UCI Adult, Adult income, California Housing, CIFAR,
+      MNIST, ImageNet, sklearn.datasets.* — using them is a topic-experiment misalignment that FAILS.
+    - The prices (6.4M rows), bids (42M rows) and awards (46M rows) files are LARGE. Reduce them to
+      hourly settlement-point-level aggregates BEFORE building features: pivot prices to one row per
+      (deliveryDate, hourEnding, settlementPoint); per-hour constraint top-K=50 slots; merge at hour
+    ## TARGET
+    Day-ahead LMP PTP spread between one source-sink settlement-point pair: choose the pair with the
+    highest traded volume from ercot_ptp_bids_2026.parquet (fallback: highest absolute mean spread).
+    spread(t) = settlementPointPrice[source] - settlementPointPrice[sink].
+    Spike definition: top 5% of absolute |spread| events (no fixed $100 cutoff).
+    Energy (lambda) term cancels in the spread — model the congestion spread directly.
+
+    ## ARCHITECTURE (market-rule-informed constraint-attention, adapted from arXiv:2605.09061)
+    Per hour, take the top K=50 constraints sorted by shadowPrice descending; pad missing slots with zeros.
+    Per-slot features: shadowPrice, constraintId_idx (index into a learned embedding table, PAD=0),
+    kV_level = max(fromStationkV, toStationkV), flow_ratio = constraintValue/constraintLimit clipped to [0,5].
+    Learned shift factors Delta-SF: attention_{s,d,k} = softmax(Linear(Embed(source) + Embed(sink))) over the
+    K constraints; latent_spread = sum_k attention_k * latent_mu_k, recovering spread = sum_k DeltaSF_k * mu_k
+    with the lambda (energy) term canceled.
+    Path + temporal features: source/sink settlement-point embeddings (8-d each); price lags (t-24, t-48,
+    t-168) at source and sink plus same lags on the spread; Fourier sin/cos of hour/day-of-week/month at 3
+    orders = 18 temporal features.
+    Head: hierarchical quantile head — median from a dense layer, lower quantiles = median - softplus
+    (non-negative increments), upper = median + softplus(increments); quantiles
+    [0.10,0.25,0.45,0.50,0.55,0.75,0.90]; loss = Average Quantile Loss (AQL); non-crossing by construction.
+    Add the LA-CASF loss-correction term.
+
+    ## BASELINES (lagged spread only, all conditions run inside main.py via a for-loop — NO CLI condition args)
+    Naive_1 (persistence, t-24 + offset), Naive_2 (weekly t-168 + offset), LQR, XGBoost, MLP, LSTM (NO Transformer).
+
+    ## ABLATIONS (each a DISTINCT code path, not parameter tweaks)
+    proposed; w/o mu (zero constraint mu_k); w/o ID (all PAD constraint IDs); w/o temporal (zero temporal);
+    w/o path embedding (zero path embeddings); w/o attention (uniform pooling); w/o energy-cancel.
+
+    ## METRICS + STATISTICAL RIGOR
+    Metrics: MAE, RMSE, MAPE, pinball(0.1/0.5/0.9), interval_width_90, spike_mae, success_rate.
+    5 seeds (e.g. [42,43,44,45,46]); report mean +/- std across seeds.
+    After the main conditions, compute paired t-test, Wilcoxon signed-rank, and sign test for proposed vs the
+    best baseline (argmin on AQL) on AQL, spike_mae, and MAE. Report null results honestly. No trading-profit claims.
+    Emit `SUMMARY condition=<name> metric=<metric> mean=<M> std=<S>` lines and a `METRIC_DEF:` line listing metrics.
+
+    ## COMPUTE BUDGET
+    Local RTX 4050 target, <=300s per run, <=36 total runs. Print a `TIME_ESTIMATE: Xs` line before the main
+    loop, and implement a time guard that stops gracefully at ~80% of budget, saving all results collected so far.
+    Keep models small (<1M params) and epochs modest so all conditions x 5 seeds complete within budget.
+      resolution. Do NOT feed millions of raw rows into the model.
