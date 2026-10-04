@@ -1,0 +1,789 @@
+    SPARC: Calibrated Day-Ahead Electricity Price-Spread Intervals
+                 from Binding-Constraint Attention
+
+
+
+                                              Anonymous Author
+                                              Anonymous Institution
+
+
+                      Abstract                              against an expected congestion corridor, needs the full
+                                                            predictive distribution of that spread. The position
+     Nodal power hedging is a bet on the spread             size is not a median forecast; it is a quantile of the
+     between two grid locations, so traders need a          loss distribution, because a band that promises ninety
+     calibrated predictive distribution rather than         percent coverage but delivers seventy-three percent
+     a point forecast. Most day-ahead price models          leaves the desk systematically under-hedged (Bessa
+     are scored on mean error and treat locational          et al., 2017). This makes probabilistic calibration a
+     prices as generic time series, leaving the hedg-       decision-relevant property, not a secondary evaluation
+     ing interval untested and the market-clearing          ritual.
+     constraints unread. We propose SPARC                   Two gaps separate the standard forecasting pipeline
+     (Constraint-Aware Spread Predictor), which             from that decision. First, electricity-price research
+     forecasts the ERCOT day-ahead spread from              has historically scored point accuracy, so the interval
+     binding constraints and shadow prices pub-             a trader actually uses is often not the object under
+     lished at the previous day’s clearing. Atten-          comparison (Lago et al., 2020; Hong et al., 2020a).
+     tion over constraint slots learns how much             Probabilistic price forecasting has improved, but many
+     each binding line moves the source-sink path,          evaluations still reward sharpness without penalizing
+     and the model runs on CPU with under nine              the width-aware violation cost that a hedging desk
+     thousand trainable parameters. Across a                pays (Gneiting and Raftery, 2007; Bracher et al., 2021).
+     broad baseline suite, SPARC gives the best-            Second, most day-ahead locational-price models treat
+     calibrated central interval. Its empirical cov-        the price as a generic temporal signal, using lags, cal-
+     erage reaches 89.4% at the requested level,            endar features, weather, load, or cross-market prices
+     while linear quantile regression reaches 73.1%         (Toubeau et al., 2020; Das et al., 2021). They ignore
+     despite lower average quantile error. Remov-           the mechanism that actually moves a nodal spread:
+     ing attention costs 11.9 coverage points with          the binding constraints and shadow prices published at
+     little change in mean error. A calendar-year           every market clearing. This is a missed input, because
+     transfer test retains the coverage edge, and the       locational marginal prices decompose into a system en-
+     results expose a metric paradox: calibrated            ergy term plus a congestion component, and the spread
+     intervals favor SPARC, average quantile loss           between two nodes cancels the common energy term,
+     favors the linear model, and the winner de-            leaving a congestion residual (Hong et al., 2020b).
+     pends on the decision metric.
+                                                            We propose SPARC, a compact constraint-attention
+                                                            network for day-ahead ERCOT spread intervals. The
+                                                            key idea is output-conditioning: when the target is
+1    INTRODUCTION
+                                                            downstream of a published market optimization, read
+                                                            the optimizer’s own outputs. SPARC takes the top
+A nodal power hedge is a bet on the price difference
+                                                            binding constraints by shadow price from the previous
+between two locations, not on the system price itself.
+                                                            day’s clearing, encodes each as a short feature slot, and
+A market participant who buys at a hub and sells at a
+                                                            learns how much each constraint moves the source-sink
+load pocket, or who prices a financial transmission right
+                                                            path through attention. This differs from formula em-
+                                                            bedding, which hard-codes a known settlement rule
+                                                            into the architecture (Yu et al., 2026). ERCOT does
+Preliminary work. Under review by AISTATS 2027. Do not      not expose the relevant shift factors in closed form at
+distribute.                                                 bid time, so SPARC conditions on the published primal
+                                   Manuscript under review by AISTATS 2027
+
+
+and dual outputs instead of assuming a functional form.       quantile recurrent networks, distributional neural net-
+The model is deliberately small, 8,978 trainable param-       works, and attention-based hybrids (Wen et al., 2017;
+eters, and runs on commodity CPU, which matches the           Marcjasz et al., 2023; Lim et al., 2021). These models
+practical cadence of a desk that retrains on a recent         typically condition on the price’s own history and a set
+rolling window.                                               of market-wide covariates, without a direct representa-
+                                                              tion of the network constraints that create locational
+The evidence shows a sharp split in model rankings.
+                                                              price differences. Our work does not compete on point-
+SPARC achieves the best-calibrated central band and
+                                                              error capacity. It competes on the identification of
+the best width-aware interval score in a broad baseline
+                                                              the input that moves the spread, which the classical
+comparison, while linear quantile regression achieves
+                                                              price-series paradigm leaves out.
+lower average quantile loss and tighter point error. The
+decomposition is diagnostic: removing attention leaves
+mean error almost unchanged, but approximately re-            2.2   Market-Rule-Informed and
+moves the calibration advantage, indicating that the                Locational-Price Models
+gain comes from how constraints are weighted rather
+                                                              Locational marginal price theory explains why the
+than from added capacity. This exposes a metric para-
+                                                              spread is a natural target for structured forecasting
+dox. Average quantile loss and calibrated-interval eval-
+                                                              (Hong et al., 2020b). Several papers have moved be-
+uation answer different questions, and they disagree
+                                                              yond scalar system prices and studied either day-ahead
+on the best model. Since a position sized from quan-
+                                                              to real-time price differences or distribution-locational-
+tiles incurs a direct penalty for interval violations, the
+                                                              price uncertainty (Das et al., 2021; Toubeau et al.,
+width-aware score is the decision metric (Hobbs et al.,
+                                                              2020). These models improve over generic series by
+2022).
+                                                              capturing spatiotemporal market structure, but they
+Our contributions are three.          First, an output-       still learn it from prices rather than from the clearing’s
+conditioned forecaster: SPARC predicts the day-ahead          constraint outputs. The closest lineage is market-rule-
+spread from the market clearing’s published constraint        informed learning. Yu et al. embed a settlement formula
+outputs, with attention learning endogenous exposure          into a neural network for imbalance prices, treating the
+weights over the source-sink path. Second, a calibration-     known rule as a differentiable structural prior (Yu et al.,
+first result: across twelve baselines, including classical,   2026). SPARC takes the complementary route. Where
+tree-based, and deep models, SPARC gives the highest          formula embedding assumes the functional relationship
+empirical coverage and the best width-aware interval          between prices and congestion, output-conditioning
+score at a small CPU-scale parameter budget. Third,           reads the primal and dual solution actually published
+a documented metric paradox: we report both average           by the clearing. This matters for ERCOT, where shift
+quantile loss and interval calibration and show that          factors are endogenous to dispatch and no clean closed
+the preferred model depends on which decision metric          form is available at bid time. In SPARC, the model
+is used, with implications for how probabilistic price        learns exposure endogenously through attention, which
+forecasters should be evaluated.                              is a different inductive bias from hard-coded formula
+                                                              layers.
+The rest of the paper places this work in the literature,
+derives the spread identity, describes the constraint-
+attention architecture, presents the main results and         2.3   Probabilistic Calibration and
+ablations, tests rival fusions, and concludes with limi-            Decision-Aligned Evaluation
+tations and future directions.                                Probabilistic forecasting research has developed
+                                                              interval-specific evaluation, proper scoring rules, and
+2     RELATED WORK                                            calibration diagnostics (Gneiting and Raftery, 2007;
+                                                              Bracher et al., 2021). Quantile regression remains a
+2.1   Electricity Price Forecasting                           central tool in energy applications (Taieb et al., 2016),
+                                                              and conformal methods can provide finite-sample cov-
+Electricity-price forecasting has been dominated by           erage under exchangeability (Vovk et al., 2005; Lei
+point-error benchmarks, with autoregressive and ex-           et al., 2018). A recurring challenge is quantile crossing,
+pert models serving as strong baselines (Lago et al.,         addressed by non-crossing constraints, isotonic post-
+2020; Uniejewski and Weron, 2018). The day-ahead              processing, or hierarchical quantile models (Chen et al.,
+setting is unusually competitive: linear and shrinkage        2025; Taieb et al., 2020). SPARC combines a soft quan-
+models frequently outperform larger neural networks           tile head with a training-time coherence penalty, and
+on average error because the price series is noisy and        reports a hierarchical variant that enforces ordering by
+nonstationary (Lago et al., 2020). Deep probabilistic         construction. The larger issue is metric selection. Dif-
+models have nevertheless become standard, including           ferent proper scoring rules reward different properties,
+                                   Manuscript under review by AISTATS 2027
+
+
+and the interval score is explicitly connected to the          K = 50 constraints by shadow-price magnitude and
+cost borne by a decision maker whose position depends          encode each as a four-dimensional slot
+on the band (Bracher et al., 2021; Hobbs et al., 2022).
+This line of work supports the paper’s central framing:                   xk = [ µk , idk , kVk , min(rk , 5) ] ,   (3)
+calibration at the hedging interval, not average quantile      where the flow ratio is clipped to [0, 5] to prevent rare
+error, is the property that matters for price-spread risk      extreme values from dominating the slot representation.
+sizing.                                                        Slots are zero-padded when fewer than K constraints
+                                                               bind, and no learned no-congestion embedding is used.
+3    BACKGROUND AND THE OLD
+                                                               The input choice follows directly from the locational-
+     VIEW                                                      price identity
+                                                                                       X
+A day-ahead locational marginal price at settlement                    LMPi − LMPj =       (SFk,i − SFk,j ) µk ,  (4)
+point i decomposes into a system energy term and a                                          k
+congestion term (Schweppe et al., 1988),
+                                                               which holds because the common system energy term
+                                                               cancels in the difference. ERCOT does not publish bid-
+                          X
+            LMPi,t = λt +     SFk,i,t µk,t ,    (1)
+                               k
+                                                               time shift factors in a closed form that can be inserted
+                                                               into the model, so SPARC does not hard-code the func-
+where λt is the system energy price, SFk,i,t is the shift      tional relationship. Instead, it conditions on the clear-
+factor of point i on constraint k, and µk,t is the shadow      ing outputs, which are the primal and dual variables
+price. The spread between two points cancels the               of the same optimization that produced the spread.
+common energy term, leaving a congestion differential.         This is the core distinction from formula-embedding
+This is why the published binding constraints and their        methods such as MRINN, where a known settlement
+shadow prices are the natural inputs.                          rule is embedded as a differentiable structural prior
+The market clears once per day, for all 24 delivery hours,     (Yu et al., 2026). SPARC learns the exposure weights
+in a single security-constrained unit commitment and           endogenously.
+economic dispatch run (Electric Reliability Council of         The slot encoder applies a shared linear map from the
+Texas, 2024). At bid time for delivery hour t of day           four slot features to an eight-dimensional embedding,
+D, the most recent completed clearing is the previous
+day’s, and the freshest snapshot for hour t is the same                   e k = W s x k + bs ,        Ws ∈ R8×4 .   (5)
+hour one day earlier. The model therefore uses a 24 h
+lead. A shorter lead would sit inside the same auction         A source-sink pair embedding zp captures the iden-
+as the target and would not be available when the bid          tity of the corridor being priced, and an eighteen-
+is placed.                                                     dimensional temporal vector ht carries six Fourier terms
+                                                               for hour of day and day of week, together with the
+The standard view treats the spread as a generic time          lagged spreads st−24 , st−48 , and st−168 . The tempo-
+series. Quantile regression on the spread’s own history        ral branch is deliberately small; it supplies calendar
+and generic covariates already outputs quantiles, so           and recent-price context, while the constraint branch
+the gap is not point versus quantile. The gap is inputs.       carries the congestion signal.
+Such models never read the published constraints, so
+they cannot condition on the mechanism that moves              The constraint view is computed by attention over
+the spread, and they go miscalibrated when congestion          the encoded slots. The query is derived from the pair
+binds.                                                         embedding only,
+
+                                                                                q = Wq zp ,          q ∈ R8 ,       (6)
+4    METHOD
+                                                               and the slot keys are the encoded slot vectors ek . The
+We denote the day-ahead spread at delivery hour t by           attention weights are
+                                                                                                  √ 
+                                                                                      exp q ⊤ ek / 8
+                 st = LMPi,t − LMPj,t ,                 (2)                  ak = PK                √ .            (7)
+                                                                                                ⊤
+                                                                                     ℓ=1 exp q eℓ / 8
+where i is the source node and j is the sink node. At bid
+time for hour t, the freshest published clearing is the        Each slot also emits a scalar shadow-price readout
+                                                                      ⊤
+hour t − 24 snapshot. That snapshot contains the set of        µ̃k = wm ek , so that the attended congestion view is
+binding transmission constraints, each with a shadow                                      K
+price µk , a constraint identifier, the voltage level of the
+                                                                                          X
+                                                                                     c=          ak µ̃k .           (8)
+constrained element, and a flow ratio. We keep the top                                    k=1
+                                               Manuscript under review by AISTATS 2027
+
+
+This operation is permutation invariant over the un-                              Algorithm 1: SPARC forward pass (one delivery
+ordered constraint set, and it yields a scalar that can                           hour)
+be interpreted as a learned path exposure times shadow                            Input: constraint slots F ∈ RK×4 , K = 50; pair id p;
+                                                                                  temporal vector t ∈ R18
+price. The pair-embedding query lets the same slot set
+produce different congestion views for different source-
+sink corridors, which is necessary because each pair has                           1. X ← SlotEncoder(F )                                  shared linear 4 → 8, per slot
+its own shift-factor differentials.                                                2. zp ← PairEmbedding(p) source-sink path embedding
+The head concatenates the pair embedding, temporal                                 3. h ← TemporalEncoder(t) 6 Fourier terms and lags 24,
+                                                                                      48, 168
+vector, and attended congestion view, z = [ zp ; ht ; c ],
+and passes z through a multi-layer perceptron with                                 4. q ← SourceSinkProj(zp )                                               query from the pair
+                                                                                      embedding only
+hidden width 128. The output layer emits the seven                                                      √
+quantiles q̂ 0.10 , q̂ 0.25 , q̂ 0.45 , q̂ 0.50 , q̂ 0.55 , q̂ 0.75 , q̂ 0.90 .    5. a ← softmax(qX ⊤ / 8)                                        d = 8, the slot dimension
+                                                                                   6. m ← LatentMu(X)                                    shared linear 8 → 1, scalar µ̃k
+The flagship SPARC head uses a soft quantile layer.                                      P
+                                                                                   7. c ← k ak mk                                        congestion view, ∆SF times µ
+As a coherence-by-construction alternative, we also
+train a hierarchical head that outputs a median and                                8. z ← [ zp ; h ; c ]
+adds nonnegative softplus increments outward. Because                              9. q̂ ← QuantileHead(z)                                         MLP(128) → 7 quantiles
+the increments are nonnegative, the hierarchical head                                          0.10          0.25          0.45          0.50
+                                                                                  Output: q̂          , q̂          , q̂          , q̂          , q̂ 0.55 , q̂ 0.75 , q̂ 0.90
+produces ordered quantiles without a penalty term.
+Training minimizes the quantile loss over all seven levels.                       Figure 1: SPARC forward pass for a single delivery
+For a target y and a quantile estimate q̂ τ , the pinball                         hour.
+loss is
+           ρτ (y − q̂ τ ) = (y − q̂ τ ) (τ − 1[y < q̂ τ ]) ,              (9)     Proposition 1 (split conformal coverage). If the
+                                                                                  calibration and test points are exchangeable, then the
+and the full objective is                                                         calibrated band has marginal coverage at least 1 − α.
+                            N                                                     The result is standard (Vovk et al., 2005; Lei et al.,
+                       1 XX                                                       2018); the proof is the rank argument. In this work the
+                             ρτ yi − q̂iτ
+                                          
+               L=
+                       N i=1                                                      data are a time series, so exchangeability is approxi-
+                                τ ∈T
+                            6
+                                                                        (10)      mate. The rolling-window retraining pattern limits the
+                                           τ         τ 
+                            X
+                      +λ          max 0, q̂i j+1 − q̂i j ,                        shift between the calibration and test windows, and we
+                            j=1                                                   validate the achieved coverage empirically.
+
+where T denotes the seven quantile levels and λ = 0.1.
+The coherence penalty is used only during training and                            Lemma 1 (non-crossing hierarchical head). The
+is not a reported metric. Training uses the Adam opti-                            hierarchical head emits a median and nonnegative soft-
+mizer (Kingma and Ba, 2014) with a learning rate of                               plus increments, and builds lower quantiles by subtract-
+10−3 , batch size 64, and 20 epochs over the chronolog-                           ing a cumulative sum and upper quantiles by adding
+ical training split; no learning-rate scheduler or early                          one. Because softplus is nonnegative, the seven outputs
+stopping is used.                                                                 are ordered by construction, so the average quantile
+                                                                                  crossing rate is zero without a penalty term.
+At inference, the 0.10 and 0.90 quantiles form the cen-
+tral 90% band. We calibrate that band with split                                  The design rationale follows from the structure of the
+conformal prediction. A calibration set separate from                             input. The binding-constraint set is variable-length
+the training and test data is used to compute noncon-                             and unordered, so the aggregator must be permutation
+formity scores                                                                    invariant. Attention provides that invariance and yields
+                                                                                  per-slot weights that can be read as exposure weights.
+           Ei = max q̂i0.10 − yi , yi − q̂i0.90 ,
+                                               
+                                                   (11)                           Uniform attention degrades calibration substantially,
+                                                                                  which indicates that the learned weighting is the load-
+and the calibrated band is                                                        bearing component. The model is deliberately small:
+    0.10
+    q̂    − Q1−α ({Ei }), q̂ 0.90 + Q1−α ({Ei }) ,
+                                                
+                                                                        (12)      the total parameter count is 8,978, dominated by the
+                                                                                  head rather than the slot machinery. The per-example
+with α = 0.10. Under exchangeability, this band has                               cost is O(Kd) with K = 50 and d = 8, which is trivial
+marginal coverage at least 90%; because the data are                              on commodity CPU. This is important for a day-ahead
+a time series, we validate the achieved coverage em-                              desk that retrains on a recent rolling window as market
+pirically rather than relying on the exchangeability                              conditions shift; the model is cheap to refresh without
+assumption.                                                                       specialized hardware.
+                                  Manuscript under review by AISTATS 2027
+
+
+                                                             is defined as
+
+
+
+
+                                                                                         2               2
+                                                                                           (lt − yt )+ + (yt − ut )+ ,
+                                                             Sα (lt , ut , yt ) = (ut − lt ) +
+                                                                                         α               α
+                                                                                                                  (13)
+                                                             with α = 0.10; lower is better. Average quantile loss
+                                                             is the average of the seven pinball scores defined in
+                                                             the Method section and measures overall probabilistic
+                                                             sharpness. Mean absolute error is computed from the
+Figure 2: Overview of the proposed methodology. The          median forecast. Continuous ranked probability score
+market-clearing outputs enter a shared slot encoder,         is approximated from the quantile forecasts. Average
+a pair-embedding query attends over the slots, and a         quantile crossing rate measures the fraction of hours
+shared head emits seven quantiles.                           in which at least one adjacent pair of quantiles is out
+                                                             of order. Interval width is the mean of ut − lt . Spike
+                                                             coverage and spike mean absolute error are evaluated
+5    EXPERIMENTS                                             on the subset of hours with the largest realized absolute
+                                                             spreads, specifically the top 10% by absolute spread.
+                                                             These conditional metrics expose how a model behaves
+We evaluate SPARC on ERCOT day-ahead LMP
+                                                             when congestion is most expensive.
+spreads. The primary corridor is HB HUBAVG to
+HB PAN, defined as source minus sink, with the full          Twelve baselines are compared: linear quantile regres-
+baseline suite. Two additional pairs, HB HUBAVG              sion, a multi-layer perceptron, an LSTM recurrent
+to HB NORTH and HB HUBAVG to HB WEST, are                    model, a Transformer, PatchTST, iTransformer, Times-
+used for proposed-model-only transfer checks. The            Net, TimeXer, XGBoost, Random Forest, and two
+main study window is January 1, 2026 through Septem-         naive baselines. Linear quantile regression uses a lin-
+ber 14, 2026, containing 6,088 valid hourly samples.         ear model for each of the seven quantiles and has a
+We split the data chronologically into a training set        strong point-error record in electricity-price forecasting.
+of 4,261 hours, a validation set of 913 hours, and a         The deep sequence models follow their standard imple-
+held-out test set of 914 hours. All models are evaluated     mentations for probabilistic time-series modeling (Wen
+under the same availability rule: at bid time for hour t,    et al., 2017; Lim et al., 2021). XGBoost is trained
+the constraint snapshot is the clearing for hour t − 24,     with quantile objectives (Li et al., 2022). The two
+the same hour one day earlier. This is the freshest          naive baselines emit point forecasts and therefore have
+published output before the day-ahead bid closes. The        zero-width intervals and near-zero coverage; their in-
+settlement and constraint files are public ERCOT data,       terval metrics are degenerate by construction, but they
+tied to FERC Order 881 (Federal Energy Regulatory            anchor the comparison for point-error metrics. Every
+Commission, 2021).                                           model is tuned on the same chronological validation
+                                                             split, and full baseline configurations are reported in
+The constraint inputs are the top 50 binding constraints
+                                                             the appendix.
+by shadow-price magnitude from the previous day’s
+clearing. Each constraint contributes four features: the     SPARC hyperparameters are listed in Table 1. The
+shadow price, a constraint identifier index, the voltage     model is compact by design: the constraint branch, pair
+level of the constrained element as a scalar, and the flow   embedding, and temporal branch account for only part
+ratio clipped to [0, 5]. The temporal vector contains        of the 8,978 trainable parameters, with the remaining
+six Fourier terms for hour of day and day of week, and       capacity in the quantile head. Training uses a single
+lagged spreads at 24, 48, and 168 hours. The target          CPU.
+is the realized day-ahead spread, and no real-time or
+                                                             All experiments ran on a commodity CPU without a
+intraday prices are used. All models receive the same
+                                                             GPU. SPARC trains in a few CPU minutes per run,
+input availability, so the comparison is apples-to-apples
+                                                             and inference for the full test set completes in seconds.
+with respect to the bid-time information set.
+                                                             This deployment profile supports the rolling-window
+Evaluation metrics are selected to answer the hedging        retraining pattern described in the Method section.
+decision. Interval coverage is the empirical frequency       The baselines are trained under the same hardware
+with which the realized spread falls inside the nominal      constraints, so the comparison reflects the practical
+90% band. The Winkler interval score (Matheson and           setting of a day-ahead trading desk rather than a high-
+Winkler, 1976) penalizes both width and violations and       compute research cluster.
+                                           Manuscript under review by AISTATS 2027
+
+
+    Table 1: SPARC hyperparameter configuration.
+ Hyperparameter               Value
+ Constraint slots K           50
+ Slot embedding dimension     8
+ Temporal dimension           18
+ Pair embedding dimension     8
+ Hidden width                 128
+ Quantile levels              {0.10, 0.25, 0.45, 0.50, 0.55, 0.75, 0.90}
+ Optimizer                    Adam
+ Learning rate                10−3
+ Batch size                   64
+ Epochs                       20
+ Coherence penalty weight λ   0.1
+ Runs                         5 seeds
+ Hardware                     AMD Ryzen 7 5735HS, 12 GB, CPU only          Figure 3: Distance to the 90% coverage target and
+                                                                           the Winkler score per method, twelve baselines. The
+                                                                           proposed model leads on both interval-oriented metrics,
+5.1    Rival fusions do not beat SPARC                                     while the linear baseline leads on average-error metrics.
+
+A natural objection is that a richer model could do
+better. We tested ten fusion and calibration direc-                        73.1%, far from the requested 90% band, and its AQCR
+tions at the same 24 h and five-seed protocol: a linear                    is high. This is the metric paradox made visible: the
+spine with the rule as a feature plus conformal, a time-                   model that a point-error benchmark would select fails
+in-query attention, an identity-only variant, the full                     the hedging band, while the model that calibrates the
+fusion, a Winkler-objective training, a feature-adaptive                   band gives up average sharpness.
+conformal band, a level and spread factorization, a                        The ablation rows show that the coverage edge is not a
+crossing-penalty sweep, a nested normalized conformal                      generic capacity effect. Removing attention drops cov-
+band, and pointwise min-width routing. None signifi-                       erage from 89.4% to 77.5%, an 11.9 percentage-point
+cantly beats SPARC on the calibrated Winkler score,                        drop, while AQL changes only from 1.254 to 1.225.
+and the closest, the identity-only variant at 18.06, sits                  Removing the temporal branch creates the opposite
+inside seed noise between the soft head at 18.20 and                       failure: coverage stays at 88.7%, but AQL degrades
+the hierarchical head at 18.00. Two directions are in-                     to 1.682 and Winkler to 27.17. Removing the path
+valid: one under-covers at 87.9% and one at 85.3%.                         embedding improves AQL to 1.191 but reduces cov-
+The consistent pattern is that widening a band costs                       erage to 82.3%. These patterns map calibration to
+coverage and preserving coverage requires width. The                       attention, point accuracy to temporal features, and the
+full table is reported in the appendix.                                    pair embedding to the trade-off between them.
+                                                                           The calibration edge transfers beyond the training win-
+6     RESULTS                                                              dow. Under a cross-year frame, training on 2025 and
+                                                                           testing on 2026, SPARC covers 90.13% against 81.36%
+Table 2 aggregates held-out performance on the pri-                        for linear quantile regression. The calendar-aligned
+mary HB HUBAVG to HB PAN corridor. All entries                             frame gives 90.49% against 82.28%. In the near-range
+are means across five independent seeds, evaluated un-                     monthly window, SPARC reaches 87.69% coverage with
+der the same bid-time availability rule: the freshest                      a Winkler score of 27.86, against 88.06% and 30.74 for
+constraint snapshot is the clearing for the same hour                      the linear model. The pattern is calibration transfer,
+one day earlier.                                                           not error transfer, and it holds across all three frames.
+The headline is that SPARC and its hierarchical vari-                      The regime split in Table 3 shows that skill on typical
+ant are the only models whose central 90% empirical                        hours does not transfer to the most expensive hours.
+coverage lands close to the nominal target. SPARC                          The MLP achieves the best spike coverage at 75.2%,
+covers 89.4% of held-out hours, and the hierarchical                       despite much worse average error, while linear quantile
+variant covers 91.2%. The nearest non-proposed base-                       regression drops to 25.7% spike coverage. SPARC’s
+line is the MLP at 87.4%, but its Winkler score is worse                   spike coverage is 56.5%, stronger than LQR but below
+than SPARC’s. The width-aware ranking favors the                           the MLP and the no-temporal ablation at 67.8%. Spike
+constraint-attention model: SPARC records a Winkler                        MAE is lowest for Random Forest, although its full-set
+score of 20.25, and the hierarchical variant improves it                   point error is poor.
+further.
+                                                                           Table 4 reports paired significance for the two decisive
+Linear quantile regression tells the opposite story on                     comparisons where per-seed arrays are available. The
+average error. It records the best AQL and CRPS, and                       coverage advantage of SPARC over LQR is statistically
+its MAE is close to SPARC’s. Yet its coverage is only                      significant, and the AQL disadvantage is also significant.
+                                                   Manuscript under review by AISTATS 2027
+
+
+Table 2: Mean probabilistic forecast performance on the held-out ERCOT primary corridor. Coverage is the
+empirical central 90% interval frequency; Winkler, AQL, CRPS, and MAE are lower-better; Width-90 is the
+mean central band width; AQCR is the average quantile crossing rate; Spike coverage is coverage on the top 10%
+largest absolute spreads. Best value per column is bold. Naive baselines emit zero-width intervals, so their width
+and AQCR are degenerate and excluded from best-value selection.
+ Method                                     Coverage (%)            Winkler           AQL       CRPS       MAE       Width-90         AQCR            Spike cov. (%)
+ SPARC                                             89.41              20.25           1.254     2.074      2.921        13.87            0.11             56.52
+ SPARC-Hierarchical                                91.23              19.40           1.260     2.087      2.880        14.02           0.00              52.61
+ MarketRuleEmbedded                                77.48              20.95           1.235     2.026      3.139         9.34            3.72             41.74
+ MarketRuleEmbedded-Hier                           83.74              21.10           1.276     2.124      2.886        10.86           0.00              50.43
+ AblationWOMu                                      88.32              19.76           1.220     2.019      2.876        12.88            0.35             55.22
+ AblationWOID                                      84.70              20.12           1.211     1.991      2.991        10.78            0.35             50.43
+ AblationWOTemporal                                88.67              27.17           1.682     2.779      3.897        18.98            3.37             67.83
+ AblationWOPathEmbed                               82.30              21.54           1.191     1.958      2.833        10.66            3.39             43.04
+ AblationWOAttention                               77.48              22.23           1.225     2.003      3.134         7.75            0.90             33.48
+ AblationWOEnergyCancel                            88.64              20.55           1.225     2.021      2.845        13.31            1.14             55.22
+ Naive-1                                            0.55              55.21           1.380     2.208      2.760         0.00            0.00              0.00
+ Naive-2                                            0.00              62.79           1.570     2.512      3.140         0.00            0.00              0.00
+ LQR                                               73.13              24.43           1.171     1.910      2.907        6.41            31.99             25.65
+ MLP                                               87.37              23.34           1.404     2.335      3.114        16.16           15.08             75.22
+ LSTM                                              74.20              27.15           1.460     2.388      3.669        9.22            11.30             32.44
+ Transformer                                       76.67              25.74           1.440     2.337      3.837         7.88            0.02              0.00
+ PatchTST                                          75.93              25.83           1.486     2.415      3.981         9.11            0.74             11.11
+ iTransformer                                      71.26              31.40           1.358     2.205      3.287         6.01           78.76              0.44
+ TimesNet                                          75.53              26.17           1.435     2.334      3.757         7.67            0.07              0.00
+ TimeXer                                           76.27              25.96           1.450     2.352      3.875         7.79            0.00              0.00
+ XGBoost                                           79.34              23.67           1.523     2.509      3.712        15.47           62.19             60.43
+ Random Forest                                     32.19              41.90           2.044     3.360      5.074         9.08            0.00             52.61
+
+
+
+Table 3: Full held-out performance versus the high-                                       Table 4: Paired comparisons between SPARC and the
+congestion spike regime, defined as the top 10% largest                                   two methods that define the decision trade-off. Differ-
+absolute realized spreads. Full coverage and full MAE                                     ence is SPARC minus the comparison method. p-values
+are repeated from Table 2 for reference; spike coverage                                   are shown where paired per-seed series are available.
+and spike MAE are computed on the spike subset only.                                          Comparison                     Metric      Difference    Paired t   p-value
+
+Best non-degenerate value per column is bold.                                                 SPARC vs LQR                   Coverage    +16.28 pp       8.33     0.0011
+                                                                                              SPARC vs LQR                   Winkler      −4.17          n/a        n/a
+Method                Full coverage (%)   Full MAE   Spike coverage (%)   Spike MAE           SPARC vs LQR                   AQL          +0.083         n/a       0.015
+SPARC                      89.41           2.921           56.52            9.665             SPARC vs AblationWOAttention   Coverage    +11.93 pp       n/a        n/a
+SPARC-Hierarchical         91.23           2.880           52.61            10.504            SPARC vs AblationWOTemporal    AQL          −0.428         n/a        n/a
+AblationWOAttention        77.48           3.134           33.48             9.662
+AblationWOTemporal         88.67           3.897           67.83            11.335
+LQR                        73.13           2.907           25.65             9.822
+MLP                        87.37           3.114           75.22            8.248
+XGBoost                    79.34           3.712           60.43            7.853
+Random Forest              32.19           5.074           52.61            7.454
+                                                                                          record of strong average error in electricity price fore-
+                                                                                          casting (Lago et al., 2020), and the present results are
+                                                                                          consistent with that record.
+These paired tests support the claim that the models
+are not merely re-ranking within noise.                                                   The ablation pattern is the strongest evidence for the
+                                                                                          proposed mechanism. Removing attention leaves aver-
+7    DISCUSSION                                                                           age error nearly unchanged but substantially degrades
+                                                                                          coverage, so the benefit is not additional capacity or
+                                                                                          a deeper feature extractor. It is the learned weighting
+The results sharpen the distinction between sharpness
+                                                                                          over binding constraint slots. Removing the temporal
+and calibration in probabilistic price forecasting. Lin-
+                                                                                          branch produces the complementary failure: coverage
+ear quantile regression minimizes average pinball loss
+                                                                                          holds while sharpness collapses. This functional de-
+but produces an interval that misses the advertised fre-
+                                                                                          composition is rare in deep forecasting models, where
+quency, which is exactly the cost a hedging desk pays
+                                                                                          architectural components often interact opaquely. Here,
+when sizing risk (Bracher et al., 2021; Hobbs et al.,
+                                                                                          attention controls calibration and the temporal branch
+2022). The interval score reverses the ranking because
+                                                                                          controls point accuracy.
+a tail violation is disproportionately expensive. This
+is not a failure of the linear model; it is an evaluation                                 The comparison with formula-embedding work is in-
+mismatch. Linear and shrinkage models have a long                                         structive. MRINN embeds a known settlement formula
+                                 Manuscript under review by AISTATS 2027
+
+
+                                                            bootstrap confidence intervals for every table cell are
+                                                            not in the locked result store. Spike and tail coverage
+                                                            are out of scope: SPARC improves spike coverage over
+                                                            the linear model but does not match the MLP. The
+                                                            learned attention weights are not validated against ac-
+                                                            tual shift-factor differentials, so the exposure reading is
+                                                            a model-based explanation, not a causal identification.
+                                                            Finally, the study window is January through Septem-
+                                                            ber 2026, and seasonal cycles outside this window are
+Figure 4: The metric paradox. Left, per-quantile pin-       not evaluated under the full baseline suite.
+ball loss. Right, per-quantile coverage. The linear
+model is sharper at the upper quantiles yet under-          9    CONCLUSION
+covers the 0.90 level (85.5% against 96.6%), which is
+the precise trade-off a hedging desk must price.            We introduced SPARC, a compact constraint-attention
+                                                            network that forecasts day-ahead ERCOT locational
+                                                            spread intervals from the published outputs of the
+as a differentiable layer (Yu et al., 2026). SPARC in-
+                                                            previous market clearing. The central finding is that
+stead reads the optimizer’s primal and dual outputs
+                                                            attention over binding constraints yields meaningful cal-
+and learns exposure weights through attention. In
+                                                            ibration gains over standard probabilistic forecasters at
+Table 2, the market-rule embedded variant underper-
+                                                            a small CPU-scale parameter budget. We also showed
+forms SPARC on coverage and Winkler, suggesting
+                                                            that calibration and average quantile loss can select
+that hard-wiring a functional form is less useful than
+                                                            different winners, an insight with direct implications for
+attending over the published binding set when the true
+                                                            how hedging-oriented price forecasters should be evalu-
+shift-factor differentials are not available at bid time.
+                                                            ated. Future work should extend output-conditioning
+The rule-embedded model’s average error remains com-
+                                                            to additional ISOs and corridors, incorporate shift-
+petitive, which again points to the calibration-specific
+                                                            factor data where available to validate learned atten-
+nature of the advantage.
+                                                            tion, and develop explicit tail-focused calibrators for
+The conditional spike regime reveals a limitation of        extreme congestion hours.
+all point-error-oriented models. The MLP dominates
+spike coverage despite poor average error, while the
+                                                            AI USE STATEMENT
+linear model collapses on the most expensive hours.
+SPARC sits between them, improving on LQR but
+                                                            The authors used a large language model to assist
+not matching the MLP in tail coverage. This suggests
+                                                            with drafting and formatting. All experimental num-
+that average sharpness, interval calibration, and tail
+                                                            bers were produced by the released code and verified
+coverage are three distinct objectives and that a single
+                                                            against the committed result store. The authors take
+architecture does not yet dominate all three.
+                                                            responsibility for the content.
+The practical implication is that day-ahead spread
+forecasters should be evaluated with interval-specific,
+decision-aligned scoring. Reporting only CRPS or av-
+                                                            A    DATA AND PROVENANCE
+erage pinball will systematically favor models that are
+sharp but miscalibrated at the hedge. At a desk, that       All experiments use public ERCOT data from the Mar-
+distinction determines whether a ninety-percent band        ket Information System (MIS): day-ahead settlement
+covers ninety percent of losses or leaves a systematic      point prices, the day-ahead binding-constraint reports
+shortfall.                                                  with shadow prices, actual load, and point-to-point
+                                                            bids and awards. The constraint records are published
+                                                            under FERC Order 881 (Federal Energy Regulatory
+8   LIMITATIONS                                             Commission, 2021). The main window is January 1,
+                                                            2026 through September 14, 2026, giving 6,088 valid
+The study has several limits. The full baseline com-        hourly samples after dropping hours with a missing
+parison is restricted to the HB HUBAVG to HB PAN            price or a missing constraint record. The split is chrono-
+corridor in ERCOT, and the additional corridors are         logical: 4,261 training hours, 913 validation hours, and
+evaluated only for the proposed model, so the generality    914 test hours. All models receive the same bid-time
+of the baseline rankings across pairs is not established.   inputs, and the constraint snapshot is the clearing for
+Paired per-seed significance tests are available only for   the same hour one day earlier, the freshest published
+the primary corridor and a subset of metrics, and full      output before the bid closes. The five source files and
+                                                             Manuscript under review by AISTATS 2027
+
+
+ Table 5: Source data files and SHA-256 checksums.                                                           Table 6: Baselines compared in the main results.
+File                                 SHA-256
+                                                                                                         Baseline           Configuration
+ercot dam prices 2026.parquet        cd231c46d381aa4e433636ed724f45135070d2b0f750f839c991b486abf439f6
+ercot dam constraints 2026.parquet   000754abb92891d46927e0178f55ad07979fa13ab86dfacae2b918ee511709e9
+ercot actual load 2026.parquet       66910067ff54b1fcf1efe4d3d94c0f9fcaef9a946c4d78c030a6dca4174932f1
+                                                                                                         LQR                Linear quantile regression, one linear model per quantile level
+ercot ptp bids 2026.parquet          d8a0f61debed870a36866f8888bfdd4b6b09c7c9c1c3dcb19e2ad2dbb6541049    MLP                Feedforward network with a quantile output layer
+ercot ptp awards 2026.parquet        fddf539c6a7046f1392afcd20b6b6e2527d78404722be7184e20e3113a4ff128
+                                                                                                         LSTM               Recurrent sequence model with a quantile output layer
+                                                                                                         Transformer        Encoder-only attention model with a quantile output layer
+                                                                                                         PatchTST           Patch-based transformer forecaster
+                                                                                                         iTransformer       Inverted transformer forecaster
+                                                                                                         TimesNet           Temporal 2D-variation forecaster
+their SHA-256 checksums are listed below; the same                                                       TimeXer            Exogenous-aware transformer forecaster
+                                                                                                         XGBoost            Gradient-boosted trees with quantile objectives
+manifest ships with the released code.                                                                   Random Forest      Quantile regression forest
+                                                                                                         Naive-1            Point forecast, previous day at the same hour
+                                                                                                         Naive-2            Point forecast, previous hour
+
+
+B        PROOFS
+                                                                                                        Table 7: Per-seed coverage (%) and average quantile
+Proposition 1 (split conformal coverage). Let                                                           loss (AQL) for the proposed model, the linear model,
+E1 , . . . , En be the nonconformity scores on the cal-                                                 and the MLP.
+                                                                                                         Seed   SPARC cov.    SPARC AQL      LQR cov.    LQR AQL     MLP cov.    MLP AQL
+ibration set, and let En+1 be the score of a test                                                        1          86.98          1.30        69.69        1.17       86.76        1.37
+                                                                                                         2          89.39          1.27        70.13        1.17       89.06        1.42
+point. Under exchangeability, the rank of En+1 among                                                     3          92.45          1.24        77.24        1.19       86.65        1.35
+the n + 1 scores is uniform on {1, . . . , n + 1}. Let                                                   4
+                                                                                                         5
+                                                                                                                    91.69
+                                                                                                                    86.54
+                                                                                                                                   1.27
+                                                                                                                                   1.19
+                                                                                                                                               71.34
+                                                                                                                                               77.24
+                                                                                                                                                            1.17
+                                                                                                                                                            1.16
+                                                                                                                                                                       90.70
+                                                                                                                                                                       83.70
+                                                                                                                                                                                    1.44
+                                                                                                                                                                                    1.44
+k = ⌈(n + 1)(1 − α)⌉ and let Q̂ = E(k) be the k-th                                                       Mean       89.41          1.25        73.13        1.17       87.37        1.40
+smallest calibration score. The calibrated band covers
+the test point exactly when En+1 ≤ Q̂, which holds
+whenever the rank of En+1 is at most k. The coverage                                                    E       FUSION TEST DETAILS
+probability is therefore k/(n + 1) ≥ 1 − α. This is the
+standard split-conformal argument (Vovk et al., 2005;                                                   The ten fused and recalibrated directions tested at the
+Lei et al., 2018).                                                                                      24 h and five-seed protocol. Lower calibrated Winkler is
+                                                                                                        better. None significantly beats SPARC on calibrated
+                                                                                                        Winkler, whose value is 18.20 for the soft head and
+Lemma 1 (non-crossing hierarchical head). The                                                           18.00 for the hierarchical head.
+hierarchical head computes a median m and increments
+dk =P softplus(·) ≥ 0. It writes the lower quantiles as
+                                              P
+m − j≤k dj and the upper quantiles as m + j≤k dj .                                                            Identity only (18.06, coverage 90.77). Assump-
+Each cumulative sum is non-decreasing in k and every                                                           tion: shadow-price magnitude is needed, not just
+dk is nonnegative, so the seven outputs are ordered                                                            which constraints bind. Intuition: if identity car-
+almost surely. The average quantile crossing rate is                                                           ries the signal, dropping magnitude should not
+therefore zero by construction, without a coherence                                                            hurt. Verdict: no gain, and the closest to SPARC.
+penalty.                                                                                                      Crossing-penalty sweep, 0.05 against 0.10
+                                                                                                               (18.08, p = 0.41). Assumption: the default λ = 0.1
+                                                                                                               is optimal. Intuition: a smaller penalty trades co-
+C        BASELINES AND                                                                                         herence pressure for average quantile loss. Verdict:
+         HYPERPARAMETERS                                                                                       no gain.
+                                                                                                              Level and spread factorization (18.16, p =
+All baselines are trained on the same chronological                                                            0.88). Assumption: the level and spread channels
+split, receive the same bid-time inputs, and emit the                                                          have different structure. Intuition: factorizing
+same seven quantiles, except the two naive baselines,                                                          them should tighten the band. Verdict: no gain, a
+which emit a point forecast and therefore have zero-                                                           single-seed win that did not replicate.
+width intervals. Scores are means over five seeds. The
+SPARC hyperparameters are in Table 1 in the main                                                              Full fusion (18.26, coverage 92.08). Assump-
+text.                                                                                                          tion: combining the winning blocks beats any sin-
+                                                                                                               gle block. Intuition: a linear base, a constraint-
+                                                                                                               attention residual, the market-rule feature, the hi-
+D        PER-SEED RESULTS                                                                                      erarchical head, and conformal harvest each block.
+                                                                                                               Verdict: no gain.
+Per-seed coverage and average quantile loss for the                                                           Nested normalized conformal (nested width
+proposed model and the two methods that define the                                                             13.37 against flat 13.90, nested Winkler 18.30
+decision trade-off. The main table reports the mean                                                            against 18.20). Assumption: normalizing the resid-
+across these five seeds.                                                                                       ual by a width prior makes it exchangeable. Intu-
+                                         Manuscript under review by AISTATS 2027
+
+
+                                                                      Algorithm 2: SPARC training
+Table 8: Fusion directions. Dashes mark a value that                  Input: chronological train split, epochs E, adjacent
+was not defined for that direction.                                   quantile pairs A, weight λ = 0.1
+ Direction                              Cal. Winkler   Coverage (%)
+ Identity only                             18.06          90.77
+ Crossing-penalty sweep                    18.08            –           1. for e = 1, . . . , E do
+ Level and spread factorization            18.16            –
+ Full fusion                               18.26          92.08         2.    for each batch do
+ Nested normalized conformal               18.30            –           3.      1: q̂ ← Algorithm 1
+ Winkler objective                         18.34           87.9
+                                                                                2: Lpin ← N1
+                                                                                             P P
+                                                                        4.                          τ ρτ (yi − q̂i,τ ) pinball over 7
+ Time-in-query attention                   18.38          92.60                                 i
+ Feature-adaptive conformal                17.38           85.3            levels
+ Linear spine with rule and conformal      20.14          90.50
+                                                                                             1
+                                                                                                P P
+ Min-width routing                           –            73.13         5.      3: Lcoh ← λ |A|   i    j∈A max(0, q̂i,j+1 − q̂i,j )
+
+                                                                        6.       4: L ← Lpin + Lcoh
+                                                                        7.       5: update θ (Adam)
+     ition: scale the residual, then conformalize. Ver-
+     dict: ruled out, the gain is not there and the PIT               Output: trained θ. Convention: j indexes quantile levels
+     worsens.                                                         in ascending order, so j + 1 is the next-higher quantile, and
+                                                                      the penalty fires when the higher estimate is the smaller
+   Winkler-objective training (18.34, coverage                       one.
+    87.9). Assumption: training on pinball while re-                  Figure 5: Training with the pinball loss and the coher-
+    porting Winkler costs calibrated width. Intuition:                ence penalty.
+    train on the reported metric. Verdict: no gain,
+    and it hurt average quantile loss.
+
+   Time-in-query attention (18.38, coverage                          F      REPRODUCIBILITY CHECKLIST
+    92.60). Assumption: the pair-only query was
+    sufficient. Intuition: if the constraint-temporal
+    interaction is real, time in the query should help.                    Code. The training, evaluation, and figure scripts
+    Verdict: no gain.                                                       are released with the paper under an open license,
+                                                                            and the commit hash is recorded in the run mani-
+   Feature-adaptive conformal (17.38, coverage                             fest.
+    85.3). Assumption: flat conformal width is too
+    uniform. Intuition: regress the conformity score on                    Data. Public ERCOT MIS files, listed in Ap-
+    features. Verdict: invalid, the band under-covers                       pendix A with their SHA-256 checksums. No pro-
+    at 85.3, which is 4.7 points below the target.                          prietary or simulated data are used.
+   Linear spine with the rule as a feature plus
+    conformal (20.14, coverage 90.50). Assumption:                         Seeds. Five seeds, 42 to 46, fixed across all meth-
+    a learned network is needed for the point forecast.                     ods.
+    Intuition: if a linear backbone with the rule and
+    conformal already covers, the constraint residual                      Hardware. AMD Ryzen 7 5735HS, 12 GB RAM,
+    buys nothing. Verdict: no gain.                                         CPU only, no GPU.
+
+   Pointwise min-width routing (coverage 73.13,                           Runtime. A few CPU minutes per training run;
+    width 6.41). Assumption: choosing the narrower                          inference over the full test set completes in seconds.
+    band each hour composes coverage. Intuition: pick
+    the tighter band per hour. Verdict: ruled out,                         Framework. PyTorch, with deterministic train-
+    selection collapses to the linear model’s coverage.                     ing on the chronological split.
+
+The design assumptions behind the study. The linear                        Statistical protocol. Five-seed paired t-test,
+backbone owns average quantile loss; confirmed, the                         with the Wilcoxon and sign test reported together;
+linear-spine variant posts the best average quantile                        the hour-level test is used only for the calibration-
+loss of the group, but that is not the deciding metric.                     distribution claim. With five seeds the Wilcoxon
+Constraint identity dominates shadow-price magnitude;                       p is floor-bound at 1/16.
+not supported as stated, because the constant-readout
+variant fixes the readout to one and so does not isolate                   Reproducibility. The run manifest lists every in-
+magnitude. The metric decides the winner; this is the                       put file and checksum, and the result store is built
+one premise that held.                                                      from the committed per-seed prediction arrays.
+                                       Manuscript under review by AISTATS 2027
+
+
+Algorithm 3: split-conformal calibration                               and application to flexiramp requirements. IEEE
+Input: trained θ, calibration half {(xi , yi )}, α = 0.10              Open Access Journal of Power and Energy.
+                                                                     Hong, T., Pinson, P., Wang, Y., Weron, R., Yang, D.,
+  1. 1: for each i: (li , ui ) ← [q̂i,0.10 , q̂i,0.90 ] from Algo-    and Zareipour, H. (2020a). Energy forecasting: A
+     rithm 1
+                                                                      review and outlook. IEEE Open Access Journal of
+  2. 2: Ei ← max(li − yi , yi − ui )             nonconformity        Power and Energy.
+  3. 3: qc ← Quantile({Ei }, 1 − α)
+                                                                     Hong, Y., Taylar, J. V., and Fajardo, A. C. (2020b). Lo-
+Output: band [l − qc , u + qc ], with marginal coverage at             cational marginal price forecasting using deep learn-
+least 1 − α under exchangeability. The data are a time                 ing network optimized by mapping-based genetic
+series, so exchangeability is approximate, and we validate             algorithm. IEEE Access.
+the achieved coverage empirically.
+                                                                     Kingma, D. P. and Ba, J. (2014). Adam: A method
+Figure 6: Split-conformal calibration of the central                   for stochastic optimization. UvA-DARE (University
+band.                                                                 of Amsterdam).
+                                                                     Lago, J., Marcjasz, G., Schutter, B. D., and Weron, R.
+TRAINING AND CALIBRATION                                               (2020). Forecasting day-ahead electricity prices: A
+ALGORITHMS                                                             review of state-of-the-art algorithms, best practices
+                                                                       and an open-access benchmark. Applied Energy.
+
+REFERENCES                                                           Lei, J., G’Sell, M., Rinaldo, A., Tibshirani, R. J., and
+                                                                       Wasserman, L. (2018). Distribution-free predictive
+Bessa, R. J., Möhrlen, C., Fundel, V., Siefert, M., Brow-             inference for regression. Journal of the American
+  ell, J., Gaidi, S. H. E., Hodge, B., Ümit Cali, and                 Statistical Association, 113(523):1094–1111.
+  Kariniotakis, G. (2017). Towards improved under-
+                                                                     Li, X., Ma, L., Chen, P., Xu, H., Xing, Q., Yan, J.,
+  standing of the applicability of uncertainty forecasts
+                                                                       Lu, S., Fan, H., Yang, L., and Cheng, Y. (2022).
+  in the electric power industry. Energies.
+                                                                       Probabilistic solar irradiance forecasting based on
+Bracher, J., Ray, E. L., Gneiting, T., and Reich,                      xgboost. Energy Reports.
+  N. G. (2021). Evaluating epidemic forecasts in                     Lim, B., Ar¨’efik, S., Loeff, N., and Pfister, T. (2021).
+  an interval format. PLOS Computational Biology,                      Temporal fusion transformers for interpretable multi-
+  17(2):e1008618.                                                      horizon time series forecasting. In Proceedings of the
+Chen, Z., Zhang, B., Du, C., Yang, C., and Gui, W.                     9th International Conference on Learning Represen-
+ (2025). Outlier-adaptive-based non-crossing quantiles                 tations. arXiv:1912.09363.
+ method for day-ahead electricity price forecasting.                 Marcjasz, G., Narajewski, M., Weron, R., and Ziel, F.
+ Applied Energy.                                                      (2023). Distributional neural networks for electricity
+Das, R., Bo, R., Chen, H., Rehman, W. U., and Wun-                    price forecasting. Energy Economics.
+ sch, D. (2021). Forecasting nodal price difference                  Matheson, J. E. and Winkler, R. L. (1976). Scoring
+ between day-ahead and real-time electricity mar-                     rules for continuous probability distributions. Man-
+ kets using long-short term memory and sequence-to-                   agement Science, 22(7):1087–1095.
+ sequence networks. IEEE Access.
+                                                                     Schweppe, F. C., Caramanis, M. C., Tabors, R. D.,
+Electric Reliability Council of Texas (2024). Ercot                    and Bohn, R. E. (1988). Spot Pricing of Electricity.
+  nodal protocols. Market Information System, Day-                     Kluwer Academic Publishers.
+  Ahead Market.
+                                                                     Taieb, S. B., Huser, R., Hyndman, R. J., and Genton,
+Federal Energy Regulatory Commission (2021). Man-                      M. G. (2016). Forecasting uncertainty in electric-
+  aging transmission line ratings. Order No. 881, 179                  ity smart meter data by boosting additive quantile
+  FERC 61,150.                                                         regression. IEEE Transactions on Smart Grid.
+Gneiting, T. and Raftery, A. (2007). Strictly proper                 Taieb, S. B., Taylor, J. W., and Hyndman, R. J. (2020).
+ scoring rules, prediction, and estimation.                            Hierarchical probabilistic forecasting of electricity de-
+Hobbs, B. F., Krishnan, V., Zhang, J., Hamann, H. F.,                  mand with smart meter data. Journal of the Ameri-
+  Siebenschuh, C., Zhang, R., Li, B., He, L., Edwards,                 can Statistical Association.
+  P., Sky, H., Krad, I., Spyrou, E., Fang, X., Wang, Y.,             Toubeau, J.-F., Bottieau, J., Wang, Y., and Vallée, F.
+ Xu, Q., and Zhang, S. (2022). How can probabilistic                  (2020). Capturing spatio-temporal dependencies in
+  solar power forecasts be used to lower costs and                     the probabilistic forecasting of distribution locational
+  improve reliability in power spot markets? a review                  marginal prices. IEEE Transactions on Smart Grid.
+                                  Manuscript under review by AISTATS 2027
+
+
+Uniejewski, B. and Weron, R. (2018). Efficient forecast-
+ ing of electricity spot prices with expert and lasso
+ models. Energies.
+Vovk, V., Gammerman, A., and Shafer, G. (2005).
+  Algorithmic Learning in a Random World. Springer.
+Wen, R., Torkkola, K., Narayanaswamy, B., and
+ Madeka, D. (2017). A multi-horizon quantile re-
+ current forecaster. arXiv (Cornell University).
+Yu, R., Lin, J., Bunn, D. W., Stiasny, J., Wang, W.,
+  Chen, Y., Esterl, T., Palensky, P., and Cremer, J. L.
+ (2026). A market-rule-informed neural network for
+  efficient imbalance electricity price forecasting. arXiv
+  preprint arXiv:2605.09061.
+
