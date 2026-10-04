@@ -463,9 +463,9 @@ def _write_paper_sections(
             "The paper should read like a published manuscript, not a data report."
         )
     # R14-1: Higher token limit for reasoning models
-    _paper_max_tokens = 12000
+    _paper_max_tokens = 32768
     if any(model_name.startswith(p) for p in ("gpt-5", "o3", "o4")):
-        _paper_max_tokens = 24000
+        _paper_max_tokens = 32768
 
     # T3.5: Retry once on failure, use placeholder if still fails
     try:

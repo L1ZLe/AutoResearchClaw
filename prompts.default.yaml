@@ -245,7 +245,7 @@ stages:
 
       {outline}'
   paper_outline:
-    max_tokens: 8192
+    max_tokens: 32768
     system: You are an academic writing planner.
     user: '{preamble}
 
@@ -282,7 +282,7 @@ stages:
 
       {reviews}'
   peer_review:
-    max_tokens: 8192
+    max_tokens: 65536
     system: You are a balanced conference reviewer who is rigorous about
       methodology-evidence consistency.
     user: 'Simulate peer review from at least 2 reviewer perspectives.
